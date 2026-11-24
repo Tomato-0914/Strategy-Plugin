@@ -146,20 +146,31 @@ export default class RoleGuide {
     const addOnAuthors = addOns.map(v => v.author)
     sources = sources.filter(v => !addOnAuthors.includes(v.source))
 
-    for (const author of sources) {
+    // 每个攻略源：已缓存 / 需要下载 / 近期没找到（跳过）
+    const tasks = sources.map(author => {
       const file = path.join(this.cachePath, author.source, this.gameDir, `${roleName}.jpg`)
-      if (fs.existsSync(file) && !isUpdate) {
-        items.push({ label: author.source, file })
-        continue
-      }
       const missKey = `${this.game}:${author.source}:${roleName}`
-      if (!isUpdate && Date.now() - (missCache.get(missKey) || 0) < MISS_TTL) continue
-      if (await this.getImg(roleName, author, file)) {
-        missCache.delete(missKey)
-        items.push({ label: author.source, file })
-      } else {
-        missCache.set(missKey, Date.now())
+      if (fs.existsSync(file) && !isUpdate) return { author, file, state: 'cached' }
+      if (!isUpdate && Date.now() - (missCache.get(missKey) || 0) < MISS_TTL) return { author, file, state: 'skip' }
+      return { author, file, missKey, state: 'download' }
+    })
+
+    const downloads = tasks.filter(v => v.state === 'download')
+    if (downloads.length) {
+      // 下载要等一会儿，先告诉用户已经收到指令
+      await this.e.reply(`正在${isUpdate ? '更新' : '下载'}【${roleName}】的攻略图，请稍候~`, false, { recallMsg: 30 })
+      // 最多同时下载 4 个，发送顺序仍按攻略源顺序
+      for (const chunk of _.chunk(downloads, 4)) {
+        await Promise.all(chunk.map(async task => {
+          task.ok = await this.getImg(roleName, task.author, task.file)
+          if (task.ok) missCache.delete(task.missKey)
+          else missCache.set(task.missKey, Date.now())
+        }))
       }
+    }
+
+    for (const task of tasks) {
+      if (task.state === 'cached' || task.ok) items.push({ label: task.author.source, file: task.file })
     }
     items.push(...addOns.map(v => ({ label: v.author, file: v.file })))
 

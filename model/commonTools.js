@@ -29,7 +29,7 @@ class CommonTools {
    * @returns {Promise<boolean>}
    */
   async download (url, file) {
-    const tmp = `${file}.${process.pid}.tmp`
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(60000) })
       if (!res.ok) {
