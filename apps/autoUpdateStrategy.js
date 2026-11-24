@@ -1,48 +1,40 @@
 import plugin from '../../../lib/plugins/plugin.js'
-import autoUpdateStrategyModel from '../model/autoUpdateStrategy.js'
+import autoUpdate from '../model/autoUpdateStrategy.js'
+import { GAME_NAME } from '../model/config.js'
 
 /**
- * 定时自动更新指定角色的攻略图片
- * 配置文件位于 resources/mora-plugin-res/strategy/config.yaml
+ * 定时自动更新指定角色的攻略图
+ * 配置：resources/data/strategy/config.yaml
+ *
+ * 配置只在载入时读取一次，避免每条消息都重复打印日志
  */
+const task = (() => {
+  try {
+    const config = autoUpdate.loadConfig()
+    if (!config) return null
+    const roles = autoUpdate.parseRoles(config.roles)
+    if (!roles.length) return null
+    logger.mark(`[自动更新攻略] 已注册定时任务 ${config.cron}，角色：${roles.map(r => `${GAME_NAME[r.game]}-${r.name}`).join('、')}`)
+    return {
+      name: '[攻略插件]自动更新攻略',
+      cron: config.cron,
+      fnc: () => autoUpdate.runUpdate()
+    }
+  } catch (err) {
+    logger.error(`[自动更新攻略] 初始化定时任务失败：${err.message}`)
+    return null
+  }
+})()
+
 export class autoUpdateStrategy extends plugin {
   constructor () {
     super({
-      name: '摩拉自动更新攻略',
+      name: '攻略插件:自动更新攻略',
       dsc: '定时自动更新指定角色攻略',
       event: 'message',
       priority: 7000,
       rule: []
     })
-
-    this._initTask()
-  }
-
-  /** 注册定时任务 */
-  _initTask () {
-    try {
-      const config = autoUpdateStrategyModel.loadConfig()
-      if (!config) return
-
-      const roles = autoUpdateStrategyModel.parseRoles(config.roles || {})
-      if (roles.length === 0) {
-        logger.mark('[自动更新攻略] 配置文件中没有有效的角色，跳过定时任务注册')
-        return
-      }
-
-      this.task = {
-        name: '[摩拉自动更新攻略]',
-        cron: config.cron,
-        fnc: () => autoUpdateStrategyModel.runUpdate()
-      }
-
-      const GAME_NAMES = { gs: '原神', sr: '星铁', zzz: '绝区零' }
-      logger.mark(
-        `[自动更新攻略] 已注册定时任务，cron: ${config.cron}，` +
-        `角色: ${roles.map(r => `${GAME_NAMES[r.game] || r.game}-${r.name}`).join('、')}`
-      )
-    } catch (err) {
-      logger.error(`[自动更新攻略] 初始化定时任务失败: ${err.message}`)
-    }
+    if (task) this.task = task
   }
 }

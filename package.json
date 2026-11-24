@@ -1,15 +1,20 @@
 {
-  "name": "mora-plugin",
+  "name": "strategy-plugin",
   "version": "1.0.0",
   "type": "module",
-  "description": "提供角色攻略、配队、卡池等信息的摩拉插件",
+  "description": "原神/星铁/绝区零角色攻略一图流 Yunzai 插件（基于 mora-plugin 修改）",
   "main": "index.js",
-  "author": "Rrrrrrray",
-  "isFork": true,
-  "forkAuthor": "jiu",
+  "author": "Tomato-0914",
+  "contributors": [
+    "Rrrrrrray (mora-plugin 原作者)",
+    "jiu (mora-plugin fork 维护者)"
+  ],
   "license": "GPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tomato-0914/Strategy-Plugin.git"
+  },
   "dependencies": {
-    "yaml": "^2.3.4",
-    "cron": "^4.3.5"
+    "yaml": "^2.3.4"
   }
 }

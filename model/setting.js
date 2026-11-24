@@ -32,31 +32,31 @@ class Logger {
 
   log(...args) {
     if (this.logConfig.log) {
-      console.log('[摩拉插件]', ...args)
+      console.log('[攻略插件]', ...args)
     }
   }
 
   info(...args) {
     if (this.logConfig.info) {
-      console.info('[摩拉插件]', ...args)
+      console.info('[攻略插件]', ...args)
     }
   }
 
   error(...args) {
     if (this.logConfig.error) {
-      console.error('[摩拉插件]', ...args)
+      console.error('[攻略插件]', ...args)
     }
   }
 
   mark(...args) {
     if (this.logConfig.mark) {
-      console.log('[摩拉插件][MARK]', ...args)
+      console.log('[攻略插件][MARK]', ...args)
     }
   }
 
   warn(...args) {
     if (this.logConfig.warn) {
-      console.warn('[摩拉插件]', ...args)
+      console.warn('[攻略插件]', ...args)
     }
   }
 }
@@ -98,13 +98,6 @@ async function writeYAML(filePath, data) {
     logger.error(`写入YAML文件失败: ${filePath}`, error)
     throw error
   }
-}
-
-// 资源文件路径
-const RESOURCE_FILES = {
-  genshin: `${path.resolve(__dirname, '../')}/config/default/roleGuides.yaml`,
-  starrail: `${path.resolve(__dirname, '../')}/config/default/srRoleGuides.yaml`,
-  zzz: `${path.resolve(__dirname, '../')}/config/default/zzzRoleGuides.yaml`
 }
 
 // 配置管理器
@@ -188,6 +181,15 @@ class ConfigManager {
     return config
   }
 
+  // 读取攻略源配置：user 文件不存在或 all/ALL 为 true 时使用 default
+  async getGuideConfig(name) {
+    const user = await readYAML(this.getConfigPath(name, false))
+    const isTrue = v => v === true || v === 1 || v === 'true'
+    const all = !user || isTrue(user.all) || isTrue(user.ALL)
+    const data = all ? await readYAML(this.getConfigPath(name, true)) : user
+    return { all, data: data || {} }
+  }
+
   // 判断配置是否无效（空数组或所有字段都是null/空）
   isConfigInvalid(config, name) {
     if (!config) return true
@@ -228,66 +230,16 @@ class ConfigManager {
       this.getConfig('help')
     ])
 
-    // 先读取 user 目录的攻略配置（用于获取 all 开关状态）
-    let roleGuidesUser = await this.getConfig('roleGuides')
-    let srRoleGuidesUser = await this.getConfig('srRoleGuides')
-    let zzzRoleGuidesUser = await this.getConfig('zzzRoleGuides')
-
-    // 根据 all 开关决定使用哪个目录的配置
-    // 原神
-    let roleGuides
-    // 处理 all 值（支持 true/false/1/0）
-    const roleGuidesAll = roleGuidesUser && (roleGuidesUser.all === true || roleGuidesUser.all === 1 || roleGuidesUser.all === 'true')
-    if (roleGuidesAll) {
-      logger.log('原神攻略源 all=true，读取 default 目录配置')
-      roleGuides = await readYAML(this.getConfigPath('roleGuides', true))
-      // 保留 all 开关状态
-      if (roleGuides) {
-        roleGuides.all = true
-      }
-    } else {
-      logger.log('原神攻略源 all=false 或未设置，读取 user 目录配置')
-      roleGuides = roleGuidesUser
-      if (roleGuides) {
-        roleGuides.all = false
-      }
-    }
-
-    // 星穹铁道
-    let srRoleGuides
-    // 处理 all 值（支持 true/false/1/0）
-    const srRoleGuidesAll = srRoleGuidesUser && (srRoleGuidesUser.all === true || srRoleGuidesUser.all === 1 || srRoleGuidesUser.all === 'true')
-    if (srRoleGuidesAll) {
-      logger.log('星穹铁道攻略源 all=true，读取 default 目录配置')
-      srRoleGuides = await readYAML(this.getConfigPath('srRoleGuides', true))
-      if (srRoleGuides) {
-        srRoleGuides.all = true
-      }
-    } else {
-      logger.log('星穹铁道攻略源 all=false 或未设置，读取 user 目录配置')
-      srRoleGuides = srRoleGuidesUser
-      if (srRoleGuides) {
-        srRoleGuides.all = false
-      }
-    }
-
-    // 绝区零
-    let zzzRoleGuides
-    // 处理 all 值（支持 true/false/1/0）
-    const zzzRoleGuidesAll = zzzRoleGuidesUser && (zzzRoleGuidesUser.all === true || zzzRoleGuidesUser.all === 1 || zzzRoleGuidesUser.all === 'true')
-    if (zzzRoleGuidesAll) {
-      logger.log('绝区零攻略源 all=true，读取 default 目录配置')
-      zzzRoleGuides = await readYAML(this.getConfigPath('zzzRoleGuides', true))
-      if (zzzRoleGuides) {
-        zzzRoleGuides.all = true
-      }
-    } else {
-      logger.log('绝区零攻略源 all=false 或未设置，读取 user 目录配置')
-      zzzRoleGuides = zzzRoleGuidesUser
-      if (zzzRoleGuides) {
-        zzzRoleGuides.all = false
-      }
-    }
+    // 攻略源：config/user 下没有对应文件，或 all/ALL 为 true 时使用默认攻略源
+    const roleGuidesCfg = await this.getGuideConfig('roleGuides')
+    let roleGuides = roleGuidesCfg.data || { news: [] }
+    roleGuides.all = roleGuidesCfg.all
+    const srRoleGuidesCfg = await this.getGuideConfig('srRoleGuides')
+    const zzzRoleGuidesCfg = await this.getGuideConfig('zzzRoleGuides')
+    const srAll = srRoleGuidesCfg.all
+    const zzzAll = zzzRoleGuidesCfg.all
+    const srRoleGuides = srRoleGuidesCfg.data
+    const zzzRoleGuides = zzzRoleGuidesCfg.data
 
     // 处理星铁和绝区零配置：支持新格式 {all, list} 和旧格式（直接数组）
     let srRoleGuidesData
@@ -341,7 +293,7 @@ class ConfigManager {
       logWarn: config.logWarn !== false,
       ossParams: config.ossParams !== undefined ? config.ossParams : '?x-oss-process=image//resize,s_1200/quality,q_90/auto-orient,0/interlace,1/format,jpg',
       help: help || { user: [], master: [] },
-      roleGuides: roleGuides || { olds: {}, news: [] },
+      roleGuides: roleGuides,
       srRoleGuides: srRoleGuidesData,
       zzzRoleGuides: zzzRoleGuidesData,
       // 只读视图数据
@@ -350,23 +302,9 @@ class ConfigManager {
       zzzRoleGuidesDefaultView: zzzRoleGuidesDefaultData
     }
 
-    // 添加 all 开关到结果（如果存在）
-    if (roleGuides && roleGuides.all !== undefined) {
-      result.roleGuides.all = roleGuides.all
-    }
-    // 星穹铁道和绝区零的配置可能是数组，all 属性可能挂在数组上
-    if (srRoleGuides) {
-      const srAll = srRoleGuides.all
-      if (srAll !== undefined) {
-        result.srRoleGuidesAll = srAll
-      }
-    }
-    if (zzzRoleGuides) {
-      const zzzAll = zzzRoleGuides.all
-      if (zzzAll !== undefined) {
-        result.zzzRoleGuidesAll = zzzAll
-      }
-    }
+    result.roleGuides.all = roleGuides.all
+    result.srRoleGuidesAll = srAll
+    result.zzzRoleGuidesAll = zzzAll
 
     logger.log('读取到的配置数据:', JSON.stringify(result, null, 2))
     return result
@@ -595,59 +533,10 @@ class ConfigManager {
       return orderA - orderB
     })
   }
-
-  // 加载资源攻略源（来自 LocalStrategyMaterialDownloader）
-  async loadResourceSources(game) {
-    try {
-      const fs = await import('fs')
-      const yaml = await import('yaml')
-
-      const file = RESOURCE_FILES[game]
-      if (!fs.existsSync(file)) {
-        logger.log(`资源文件不存在: ${file}`)
-        return []
-      }
-
-      const content = fs.readFileSync(file, 'utf8')
-      if (!content.trim()) {
-        logger.log(`资源文件为空: ${file}`)
-        return []
-      }
-
-      const data = yaml.parse(content)
-      let sources = []
-      if (game === 'genshin' && data && typeof data === 'object' && Array.isArray(data.news)) {
-        sources = data.news
-      } else if (game === 'starrail' && data && typeof data === 'object' && Array.isArray(data.list)) {
-        sources = data.list
-      } else if (game === 'zzz' && data && typeof data === 'object' && Array.isArray(data.list)) {
-        sources = data.list
-      } else if (Array.isArray(data)) {
-        // 兼容旧格式（直接是数组）
-        sources = data
-      } else {
-        logger.log(`资源文件格式错误: ${file}`)
-        return []
-      }
-
-      // 过滤无效源：必须有 source 和 collection_id（数组）
-      const validSources = sources.filter(s =>
-        s && typeof s === 'object' &&
-        typeof s.source === 'string' &&
-        Array.isArray(s.collection_id)
-      )
-
-      logger.log(`加载 ${game} 资源攻略源:`, validSources)
-      return validSources
-    } catch (error) {
-      logger.error(`加载资源攻略源失败:`, error)
-      return []
-    }
-  }
 }
 
 // 创建配置管理器实例
 const configManager = new ConfigManager()
 
-export { configManager, logger, RESOURCE_FILES }
+export { configManager, logger }
 export default configManager

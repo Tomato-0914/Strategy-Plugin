@@ -1,63 +1,86 @@
-# Mora-Plugin-fork 【致谢摩拉佬】
+# Strategy-Plugin 攻略插件
 
-### 新增功能与说明
+Yunzai-Bot V3（Miao-Yunzai / TRSS-Yunzai）插件，发送原神、崩坏：星穹铁道、绝区零的**角色攻略一图流**。
 
-1. 攻略功能强制绑定资源库（执行 #更新摩拉资源 下载）
-2. 添加了网页配置攻略源与图片压缩参数
-3. 适配集录祈愿查询
+基于 [mora-plugin](https://gitee.com/Rrrrrrray/mora-plugin)（作者 Rrrrrrray）及其 [fork](https://gitcode.com/jiuyixian/mora-plugin)（维护 jiu）修改，感谢原作者。
 
-# Mora-Plugin【原版说明】  
-Mora-Plugin是一个Yunzai-Bot的插件
-仅用于自我学习其他优秀插件
-
-~~但里面大概都是写不实用的功能（想到啥写啥~~
-#### 真心感谢云崽，喵喵，图鉴，白纸等等作者的开源代码贡献
-###### P.S 如有与其他插件展现效果一致的功能，大概率会删除 ~~（跑路）~~
-###### P.P.S 有授权的不会删
-
-## <font color="Red">注意事项</font>
-### <font color="DarkSalmon">此插件合并进[插件库](https://gitee.com/yhArcadia/Yunzai-Bot-plugins-index)前（以该库首页README为准），要是写进一键脚本等大范围传播需要提前告知</font>
-
-## 功能
-### [点击就看:arrow_right:食用指南](./%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E.md) 或使用`#摩拉帮助`命令
-
-#### 原神冒险团
-- [x] 角色配队一图流（图源米游社`@茗血茶`）
-- [x] 角色参考面板&收益曲线（图源米游社`@blue菌hehe`）
-#### 虚空数据库
-- [x] 深渊使用率
-- [x] 深渊热门队伍
-- [ ] 深渊天梯榜
-- [ ] 深渊队伍系统
-#### 摩拉功能
-- [x] 角色攻略（覆盖其他相同触发词的指令）
-- [x] 复刻表（目前仅支持五星角色、武器） 
-- [x] 某一个UP卡池详情 
-- [x] 各版本深渊原魔血量、最低输出量（图源NGA`@妮可少年`）
-- [x] 当期深渊阵容参考（图源米游社`@卡玛sei亚`）
-- [x] 全局表情功能限制（如不需要此功能在云崽设置里禁用）
-- [ ] 面包店小游戏（简陋版）[原版@nonebot-plugin-bread-shop](https://github.com/Mai-icy/nonebot-plugin-bread-shop)
-- [ ] （挖坑
 ## 安装
+
+在 Yunzai 根目录执行：
+
+```bash
+git clone --depth=1 https://github.com/Tomato-0914/Strategy-Plugin.git ./plugins/Strategy-Plugin/
 ```
-git clone --depth=1 https://gitee.com/Rrrrrrray/mora-plugin.git ./plugins/mora-plugin/
+
+插件目录名可以随意，不影响使用。攻略数据已包含在插件内，无需另外下载资源包。
+
+依赖：
+- 原神角色名识别会用到 `genshin` 插件（没有也能用，只是认不出别名表以外的叫法）
+- 卡池查询需要 `genshin` 插件和 `miao-plugin`
+- 如装了图鉴插件（`plugins/Atlas`），会额外发送角色材料图
+
+## 指令
+
+| 功能 | 指令 | 说明 |
+| :---: | --- | --- |
+| 角色攻略 | `#钟离攻略` `#钟离一图流` | 原神 |
+| | `*流萤攻略` `#星铁流萤攻略` | 星铁 |
+| | `%艾莲攻略` `#绝区零艾莲攻略` | 绝区零 |
+| | `#更新钟离攻略` | 重新下载该角色的攻略图 |
+| 卡池详情 | `#雷神卡池` `#薙刀复刻` `#星铁黄泉卡池` | UP 卡池详情、未复刻天数 |
+| 深渊版本 | `#5.0深渊` `#5.0剧诗` `#3.2混沌` `#3.2虚构` | 各版本怪物，图片来自 [JIUXJIU/Abyss](https://cnb.cool/JIUXJIU/Abyss) |
+| 历代12层 | `#历代12层` `#历代12-3` | 最低输出量，图源 NGA `@妮可少年` |
+| 帮助 | `#攻略帮助` | |
+| 更新（主人） | `#攻略更新` `#攻略强制更新` | 更新插件，攻略数据一起更新 |
+
+角色攻略指令优先级较高（priority 5），会覆盖其他插件的同名指令；认不出的角色名会交给其他插件处理。
+
+## 攻略从哪里来
+
+1. `resources/data/strategy/<作者>.json` 中记录的图片链接（优先）
+2. 找不到时，按 `config/*RoleGuides.yaml` 里的米游社合集 ID 抓取
+3. 下载的图缓存在 `data/roleGuides/<作者>/<游戏>/<角色>.jpg`，发送 `#更新xx攻略` 可重新下载
+
+`resources/data/strategy/config.yaml` 中可以配置定时任务，在新角色上线后自动刷新其攻略图。
+
+### 数据格式
+
+```jsonc
+// resources/data/strategy/HoYo青枫.json
+{
+  "HoYo青枫": {
+    "GenshinImpact": [{ "name": "钟离", "link": "https://upload-bbs.miyoushe.com/..." }],
+    "StarRail": [],
+    "ZenlessZoneZero": []
+  }
+}
 ```
-如果是手工下载的zip压缩包，请将解压后的mora-plugin文件夹（请删除压缩自带的-master后缀）放置在Yunzai目录下的plugins文件夹内。
+
+角色别名在 `resources/data/alias/{gs,sr,zzz}alias.json`，格式为 `{ "正式名": ["别名1", "别名2"] }`。
+
+## 自定义
+
+- **攻略源**：把 `config/default/roleGuides.yaml`（星铁 `srRoleGuides.yaml`、绝区零 `zzzRoleGuides.yaml`）复制到 `config/user/` 修改，或在锅巴面板中关闭「使用默认攻略源」后编辑。列表顺序就是发送顺序。
+- **自制图包**：放在 `data/roleGuides/add_ons/<作者>/<游戏目录>/<角色名>.jpg`
+  - 游戏目录：`GenshinImpact`、`StarRail`、`ZenlessZoneZero`（原神也可以直接放在 `<作者>/` 下）
+  - 与攻略源同名的作者，以图包为准
+- **其他设置**（合并转发、日志、图片压缩参数）：`config/user/config.yaml` 或锅巴面板
 
 ## 免责声明
-1. 功能仅限内部交流与小范围使用，请勿将Yunzai-Bot及Mora-Plugin用于任何以盈利为目的的场景
-2. 图片与其他素材均来自于网络，仅供交流学习使用，如有侵权请联系，会立即删除
 
-## 赞助
-#### [动动手指给我发电](https://afdian.net/a/rrrrrrray):money_with_wings:
+1. 仅供交流学习，请勿用于任何以盈利为目的的场景
+2. 攻略图片版权归各攻略作者所有，如有侵权请联系删除
 
-### 致谢
-| 来源授权 | 资源贡献  |
-|:---:|:---:|
-| [原神冒险团](https://mp.weixin.qq.com/s/h8Xii_78K14BnYhcJSIQ5Q) | 攻略组官方资源 |
-| [白猫](https://space.bilibili.com/425251) | [虚空数据库](https://akashadata.com) |
-| [坤易](https://www.miyoushe.com/ys/collection/22148) | 角色攻略一图流 |
-| [茗血茶](https://www.miyoushe.com/ys/collection/1070358) | 配队一图流 |
-| [妮可少年](https://bbs.nga.cn/read.php?tid=31508898) | 深渊历史原魔阵容 |
-| [卡玛sei亚](https://www.miyoushe.com/ys/collection/491538) | 深渊阵容、各系配队 |
-| [blue菌hehe](https://www.miyoushe.com/ys/collection/10772) | 参考面板、收益曲线 |
+## 致谢
+
+| 来源 | 贡献 |
+| :---: | --- |
+| [Rrrrrrray](https://gitee.com/Rrrrrrray/mora-plugin) | mora-plugin 原作者 |
+| [jiu](https://gitcode.com/jiuyixian/mora-plugin) | mora-plugin fork、攻略数据整理、深渊图库 |
+| [HoYo青枫](https://www.miyoushe.com/ys/accountCenter/postList?id=285802042)、[Asgater](https://www.miyoushe.com/ys/accountCenter/postList?id=79695828)、[猫冬](https://www.miyoushe.com/ys/accountCenter/postList?id=74019947)、[关蝎](https://www.miyoushe.com/ys/accountCenter/postList?id=82386584)、[地底Tv](https://www.miyoushe.com/ys/accountCenter/postList?id=83147658)、[祖安水稻公主](https://www.miyoushe.com/ys/accountCenter/postList?id=159938966)、[祈鸢ya](https://www.miyoushe.com/ys/accountCenter/postList?id=137101761)、[星穹中心](https://www.miyoushe.com/ys/accountCenter/postList?id=368830308)、[让我摸个鱼吧Moyu](https://www.miyoushe.com/ys/accountCenter/postList?id=352759746)、[小橙子阿](https://www.miyoushe.com/ys/accountCenter/postList?id=73603011)、[紫罗兰打烊啦](https://www.miyoushe.com/ys/accountCenter/postList?id=279259320) 等米游社攻略作者 | 角色攻略一图流 |
+| [妮可少年](https://bbs.nga.cn/read.php?tid=31508898) | 历代深渊最低输出量 |
+| 云崽、喵喵插件、图鉴插件、白纸插件 | 参考代码 |
+
+## 许可
+
+[GPL-3.0](./LICENSE)，与原项目一致。

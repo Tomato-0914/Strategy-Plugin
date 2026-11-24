@@ -1,87 +1,54 @@
 import plugin from '../../../lib/plugins/plugin.js'
 import fs from 'node:fs'
-import moracfg from '../model/config.js'
+import path from 'node:path'
+import cfg from '../model/config.js'
 import RoleGuide from '../model/roleGuide.js'
 
+const reg = /^[#*%]?(原神|星铁|绝区零)?(更新)?(\S+?)(攻略|一图流)$/
+
 /**
- * 借鉴原云崽攻略代码
- * 默认覆盖所有【xx攻略】原指令，不想覆盖可以把priority调整为5000
- * 攻略来自米游社
- * @author Rrrrrrray
- * !!!禁止倒卖
+ * 角色攻略
+ * priority 为 5，会优先于其他插件的【xx攻略】；
+ * 只处理认得出的角色名，认不出的会交给其他插件
  */
 export class roleGuides extends plugin {
   constructor () {
     super({
-      name: '摩拉米游社角色攻略',
-      dsc: '米游社角色攻略',
+      name: '攻略插件:角色攻略',
+      dsc: '米游社角色攻略一图流',
       event: 'message',
       priority: 5,
       rule: [
         {
-          reg: '^#?(星铁|绝区零)?(更新)?\\S+(攻略|一图流|配对|配队)$',
+          reg: reg.source,
           fnc: 'roleGuide'
-        },
-        {
-          reg: '^#?(星铁)?\\S+(参考面板|收益曲线|进阶(攻略|参考)?)$',
-          fnc: 'roleRef'
-        },
-        {
-          reg: '^#?收益曲线帮助$',
-          fnc: 'curveHelp'
-        },
-        {
-          reg: '^#?(星铁)?参考面板帮助$',
-          fnc: 'curveHelp'
         }
       ]
     })
   }
 
-  /** 初始化 */
   async init () {
-    let path = moracfg.getMoraPath('data')
-    if (!fs.existsSync(path)) fs.mkdirSync(path)
-
-    if (!fs.existsSync(`${path}roleGuides`)) fs.mkdirSync(`${path}roleGuides`)
-
-    if (!fs.existsSync(`${path}roleGuides/add_ons`)) fs.mkdirSync(`${path}roleGuides/add_ons`)
+    fs.mkdirSync(path.join(cfg.data, 'roleGuides/add_ons'), { recursive: true })
   }
 
-  /** 角色一图流 */
   async roleGuide () {
-    let match = /^#?(星铁|绝区零)?(更新)?(\S+)(攻略|一图流|配对|配队)$/.exec(this.e.msg)
-    let isUpdate = !!match[2]
-    let roleName = match[3]
+    const match = reg.exec(this.e.msg?.trim() || '')
+    if (!match) return false
+    const [, gameName, isUpdate, roleName] = match
 
-    let msg = new RoleGuide(this.e)
-    if (this.e.game === 'sr') msg = await msg.srStrategies(roleName, isUpdate)
-    else if (this.e.game === 'zzz' || this.e.msg.includes('绝区零')) {
-      if (this.e.game !== 'zzz') this.e.game = 'zzz'
-      msg = await msg.zzzStrategies(roleName, isUpdate)
-    } else msg = await msg.strategies(roleName, isUpdate)
-    if (!msg) return false
-
-    await this.e.reply(msg)
+    const msg = await new RoleGuide(this.e, this.getGame(gameName)).getGuide(roleName, !!isUpdate)
+    if (msg === false) return false
+    if (msg) await this.e.reply(msg)
     return true
   }
 
-  async roleRef () {
-    let match = /^#?(星铁)?(\S+)(参考面板|收益曲线|进阶(攻略|参考)?)$/.exec(this.e.msg)
-    let roleName = match[2]
-
-    let msg = await new RoleGuide(this.e).stat_curve(roleName)
-    if (!msg) return
-
-    await this.e.reply(msg)
-    return true
-  }
-
-  async curveHelp () {
-    let msg = await new RoleGuide(this.e).getHelp()
-    if (!msg) return false
-
-    await this.e.reply(msg)
-    return true
+  /** 判断游戏：显式前缀 > 云崽识别结果（* 星铁、% 绝区零） */
+  getGame (gameName) {
+    const map = { 原神: 'gs', 星铁: 'sr', 绝区零: 'zzz' }
+    if (gameName) return map[gameName]
+    const raw = String(this.e.original_msg || this.e.raw_message || this.e.msg || '').trim()
+    if (this.e.game === 'zzz' || raw.startsWith('%')) return 'zzz'
+    if (this.e.game === 'sr' || this.e.isSr || raw.startsWith('*')) return 'sr'
+    return 'gs'
   }
 }

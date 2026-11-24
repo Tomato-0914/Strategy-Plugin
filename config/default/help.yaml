@@ -1,38 +1,29 @@
 user:
-  - name: '#艾尔海森攻略 #更新钟离一图流'
-    des: '角色攻略 (覆盖其他相同触发词的指令)'
+  - name: '#钟离攻略 #钟离一图流'
+    des: '原神角色攻略，前缀 * 查星铁、% 查绝区零'
     icon: paimon
-  - name: '#钟离进阶参考'
-    des: '角色参考面板&收益曲线'
+  - name: '*流萤攻略 #星铁流萤攻略'
+    des: '星铁角色攻略'
     icon: paimon
-  - name: '#绫人配队 #神鹤万心配队'
-    des: '角色配队一图流 米游社@茗血茶'
-    icon: team
-  - name: '#角色复刻表 #更新武器复刻表'
-    des: '#复刻表 开服至今复刻情况' 
-    icon: banner
+  - name: '%艾莲攻略 #绝区零艾莲攻略'
+    des: '绝区零角色攻略'
+    icon: paimon
+  - name: '#更新钟离攻略'
+    des: '重新下载该角色的攻略图'
+    icon: update
   - name: '#雷神卡池 #薙刀复刻'
-    des: 'UP卡池详情'
+    des: 'UP 卡池详情与未复刻天数'
     icon: emerald
-  - name: '#3.3深渊 #3.4深渊阵容'
-    des: '深渊版本参考资料'
+  - name: '#5.0深渊 #3.2混沌'
+    des: '各版本深渊/剧诗/混沌/虚构/末日怪物'
     icon: xiao
-  - name: '#历代12-3 #历代12层'
-    des: '历代深渊12层最低输出量'
+  - name: '#历代12层 #历代12-3'
+    des: '历代深渊 12 层最低输出量'
     icon: dinosaur
-  - name: '#虚空深渊使用率'
-    des: '支持筛选四星/五星 #虚空深渊五星使用率'
-    icon: akasha
-  - name: '#虚空深渊队伍'
-    des: '支持筛选上下半 出战数/满星率排序'
-    icon: akasha
 master:
-  - name: '表情辅助'
-    des: '非命令，限制全局表情功能'
-    icon: monkas
-  - name: '#更新摩拉资源'
-    des: '更新至最新摩拉资源包'
-    icon: team
-  - name: '#摩拉更新'
-    des: '更新摩拉插件'
+  - name: '#攻略更新'
+    des: '更新攻略插件（攻略数据随插件更新）'
+    icon: update
+  - name: '#攻略强制更新'
+    des: '放弃本地修改并更新插件'
     icon: update

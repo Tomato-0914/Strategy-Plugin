@@ -1,96 +1,77 @@
-import fetch from 'node-fetch'
+import fs from 'node:fs'
+import path from 'node:path'
 import common from '../../../lib/common/common.js'
-import { pluginPath, moraVer, yzInfo } from '../components/index.js'
-import _ from 'lodash'
-import moracfg from './config.js'
+import { pluginPath, pluginName, pluginVer, yzInfo } from '../components/info.js'
+import cfg from './config.js'
 
-class commonTools {
-  constructor () {
-    this._path = process.cwd()
-    this.rolePicPath = `${pluginPath}/resources/img/role/`
-  }
+const fetch = globalThis.fetch || (await import('node-fetch')).default
 
+class CommonTools {
   /**
-   * 获取数据
-   * @param {string} url 访问地址
-   * @returns 数据
+   * GET 请求并解析 JSON，失败返回 false
+   * @param {string} url
    */
   async getFetchData (url) {
-    let response = await fetch(url, { method: 'get' })
-    if (!response.ok) return false
-
-    const res = await response.json()
-    return res
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(30000) })
+      if (!res.ok) return false
+      return await res.json()
+    } catch (err) {
+      logger.warn(`[${pluginName}] 请求失败 ${url}：${err.message}`)
+      return false
+    }
   }
 
   /**
-   * 截图模板
-   * @param {Object} parent 父级目录
-   * @param {String} model 模型名称
-   * @param {Object} data 数据
-   * @returns 数据渲染模板
+   * 下载文件。先写入临时文件，成功后再改名，避免留下半张图
+   * @param {string} url
+   * @param {string} file 保存路径
+   * @returns {Promise<boolean>}
    */
-  async getRenderData (parent, model, data) {
+  async download (url, file) {
+    const tmp = `${file}.${process.pid}.tmp`
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(60000) })
+      if (!res.ok) {
+        logger.warn(`[${pluginName}] 下载失败 HTTP ${res.status}：${url}`)
+        return false
+      }
+      const buf = Buffer.from(await res.arrayBuffer())
+      if (!buf.length) return false
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(tmp, buf)
+      fs.renameSync(tmp, file)
+      return true
+    } catch (err) {
+      logger.warn(`[${pluginName}] 下载异常 ${url}：${err.message}`)
+      fs.rmSync(tmp, { force: true })
+      return false
+    }
+  }
+
+  /** puppeteer 渲染参数 */
+  getRenderData (parent, model, data) {
     return {
       tplFile: `${pluginPath}/resources/html/${parent}/${model}.html`,
       pluResPath: `${pluginPath}/resources/`,
-      profilePic: this.rolePicPath,
-      watermark: `Created By Yunzai-Bot ${yzInfo.version} & Mora-Plugin ${moraVer}`,
+      watermark: `Created By ${yzInfo.name} ${yzInfo.version} & ${pluginName} ${pluginVer}`,
       quality: 100,
       ...data
     }
   }
 
-  /** 下载文件 */
-  async download (url, path) {
-    let res = await fetch(url)
-    if (res.ok) return await common.downFile(url, path)
-  }
-
-  get travelerID () {
-    return [10000005, 10000007, 20000000]
-  }
-
-  /** 主角特殊处理 */
-  traveler (alias, name, type) {
-    let travelers = ['风主', '岩主', '雷主', '草主', '水主', '火主']
-    if (!travelers.includes(alias)) {
-      travelers = _.map(travelers, v => `${v}${type}`)
-      return `请选择${name}${type}：${_.join(travelers, '、')}`
-    } else return alias
-  }
-
-  trailblazer (name, type) {
-    let trailblazers = {
-      物主: { ids: [8001, 8002], alias: ['物', '物理', '毁灭'] },
-      火主: { ids: [8003, 8004], alias: ['火', '存护'] },
-      虚数主: { ids: [8005, 8006], alias: ['虚数', '同谐', '同协', '虚'] },
-      冰主: { ids: [8007, 8008], alias: ['冰', '记忆'] },
-    }
-
-    const alias = ['主', '主角', '爷', '开拓者', '星', '穹']
-
-    if (_.tail(alias).includes(name)) {
-      trailblazers = _.map(_.keys(trailblazers), v => `${v}${type}`)
-      return `请选择${name}${type}：${_.join(trailblazers, '、')}`
-    } else {
-      let find = _.find(trailblazers, v => new RegExp(`(${v.alias.join('|')})(${alias.join('|')})`).test(name))
-      if (find) {
-        return {
-          name: `${find.alias[0]}主`,
-          roleId: find.ids[0],
-          reg: `(${find.alias.join('|')})(${_.take(alias, 4).join('|')})`
-        }
-      }
-    }
-  }
-
+  /**
+   * 多条消息：开启合并转发时打包成转发消息，否则拼接
+   * @param {object} e
+   * @param {Array} data
+   * @param {string} title
+   * @param {boolean} force 强制合并转发
+   */
   async makeMsg (e, data = [], title = '', force = false) {
-    const forwardMsg = moracfg.getSetYaml('config', true).forwardMsg
     if (data.length === 1) return data[0]
-    else if (forwardMsg || force) return await common.makeForwardMsg(e, data, title)
-    else return [title, ...data]
+    if (Number(cfg.config.forwardMsg) || force) return await common.makeForwardMsg(e, data, title)
+    return [title, ...data]
   }
 }
 
-export default new commonTools()
+export default new CommonTools()

@@ -1,10 +1,9 @@
 import plugin from '../../../lib/plugins/plugin.js'
 import commonTools from '../model/commonTools.js'
-import moracfg from '../model/config.js'
+import cfg from '../model/config.js'
 import _ from 'lodash'
 import fs from 'node:fs'
-import fetch from 'node-fetch'
-import path from 'path'
+import path from 'node:path'
 
 /**
  * 借鉴原云崽攻略代码
@@ -30,7 +29,7 @@ export class abyssVersion extends plugin {
     ));
     const typeReg = aliasList.map(_.escapeRegExp).join("|");
     super({
-      name: '摩拉深渊版本',
+      name: '攻略插件:深渊版本',
       dsc: '各版本深渊怪物',
       event: 'message',
       priority: 5,
@@ -40,24 +39,17 @@ export class abyssVersion extends plugin {
           fnc: 'abyssVersion'
         },
         {
-          reg: '^#?历代12(层|-[1-3])?(最低输出量)?$',
+          reg: '^#?历代12(层|-[1-3])(最低输出量)?$',
           fnc: 'history12'
-        },
-        {
-          reg: '^#?[1-9]\.\\d(深渊)?阵容(参考|推荐)?$',
-          fnc: 'teamRefer'
         }
       ]
     })
 
-    // Abyss 目录
-    this.abyssDir = path.join(process.cwd(), 'data', 'Abyss')
-    if (!fs.existsSync(this.abyssDir)) {
-      fs.mkdirSync(this.abyssDir, { recursive: true })
-    }
+    // 图片缓存目录
+    this.abyssDir = path.join(cfg.data, 'abyss')
     const cron = '0 0 1/10 * *' // 5 字段：每 10 天的 00:00 执行一次（minute hour day month weekday）
     this.task = {
-      name: '[摩拉深渊版本]data/Abyss 自动清理',
+      name: '[攻略插件]深渊图片缓存清理',
       cron: cron,
       fnc: () => {
         this.cleanAbyssDir();
@@ -153,10 +145,7 @@ export class abyssVersion extends plugin {
 
     try {
       logger.mark(`[深渊版本] 尝试下载: ${url}`)
-      const res = await fetch(url)
-      if (res.ok) {
-        const arrayBuffer = await res.arrayBuffer()
-        fs.writeFileSync(local, Buffer.from(arrayBuffer))
+      if (await commonTools.download(url, local)) {
         logger.mark(`[深渊版本] 下载成功: ${standardName}/${number}.png`)
         return local
       }
@@ -235,57 +224,38 @@ export class abyssVersion extends plugin {
     }
   }
 
-  /** 12层历史 */
+  /** 历代 12 层最低输出量（图源 NGA@妮可少年） */
   async history12() {
-    this.path = `${this.dirPath(this.e.game)}/Version/history12`
-    await this.checkRes(this.path)
+    const dir = path.join(cfg.res, 'abyss/history12')
+    if (!fs.existsSync(dir)) {
+      await this.e.reply(cfg.resNotFound, true)
+      return true
+    }
 
-    let room = /^#?历代12(层|-[1-3])?(最低输出量)?$/.exec(this.e.msg)[1]
+    const room = /^#?历代12(层|-[1-3])(最低输出量)?$/.exec(this.e.msg)?.[1]
     if (!room) return false
 
-    let msg = []
-
     if (room === '层') {
-      let pics = fs.readdirSync(this.path)
-      _.each(pics, (v) => msg.push(segment.image(`file://${this.path}/${v}`)))
+      const msg = fs.readdirSync(dir).sort().map(v => segment.image(`file://${path.join(dir, v)}`))
       await this.e.reply(await commonTools.makeMsg(this.e, msg, '历代深渊12层最低输出量'))
-    } else {
-      let img = `${this.path}/历代12${room}最低输出量.png`
-      if (fs.existsSync(img)) await this.e.reply(segment.image(`file://${img}`))
+      return true
     }
-    return true
-  }
 
-  async teamRefer() {
-    this.path = `${this.dirPath(this.e.game)}/Teams/`
-    await this.checkRes(this.path)
-
-    let ver = /^#?([1-9]\.\d)深渊?阵容(参考|推荐)?$/.exec(this.e.msg)[1]
-    if (!ver) return false
-
-    let img = `${this.path}卡玛sei亚/${ver}.png`
-    if (!fs.existsSync(img)) {
-      await this.e.reply(`暂无${ver}深渊阵容`)
-      return false
-    }
+    const img = ['jpg', 'png'].map(ext => path.join(dir, `历代12${room}最低输出量.${ext}`)).find(f => fs.existsSync(f))
+    if (!img) return false
     await this.e.reply(segment.image(`file://${img}`))
     return true
   }
-  async checkRes(path) {
-    if (!fs.existsSync(path)) {
-      await this.e.reply(moracfg.resNotFound, true)
-      return false
-    }
-  }
+
   async cleanAbyssDir() {
     try {
       if (fs.existsSync(this.abyssDir)) {
         fs.rmSync(this.abyssDir, { recursive: true, force: true })
       }
       fs.mkdirSync(this.abyssDir, { recursive: true })
-      console.log('[Abyss] 已清理并重建 data/Abyss 目录')
+      logger.mark('[深渊版本] 已清理图片缓存')
     } catch (err) {
-      console.error('[Abyss] 清理 data/Abyss 目录出错：', err)
+      logger.error('[深渊版本] 清理图片缓存出错：', err)
     }
   }
   // 固定的版本号映射表（可扩展）

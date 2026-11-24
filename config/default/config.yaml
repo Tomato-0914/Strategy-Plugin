@@ -1,16 +1,12 @@
-# 是否开启合并转发，默认开启，0为关闭（使用拼接消息）
+# 多张图片是否使用合并转发：1 开启，0 关闭（关闭后拼接成一条消息发送）
 forwardMsg: 1
 
-# 日志开关
-# false = 关闭（不显示 logger.log 日志）
-# true = 开启（显示 logger.log 日志）
-
-logError: false
+# 日志开关：true 显示，false 不显示
+logError: true
+logWarn: true
+logMark: true
 logLog: false
-logMark: false
-logWarn: false
 
-# OSS图片处理参数配置
-# 用于优化图片加载速度和质量的阿里云OSS处理参数
-# 默认：?x-oss-process=image//resize,s_1200/quality,q_90/auto-orient,0/interlace,1/format,jpg
+# 阿里云 OSS 图片处理参数，只对米游社图床链接生效
+# 默认：缩放到 1200、质量 90、渐进式 jpg，可明显减小攻略图体积
 ossParams: '?x-oss-process=image//resize,s_1200/quality,q_90/auto-orient,0/interlace,1/format,jpg'

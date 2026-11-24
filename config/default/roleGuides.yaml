@@ -1,12 +1,10 @@
-# 使用默认攻略源
-# 开启时读取 config/default/roleGuides.yaml，关闭时读取 config/user/roleGuides.yaml
+# 默认攻略源（随插件更新，请勿直接修改本文件）
+# 想自定义攻略源：复制到 config/user/ 下修改，或在锅巴面板中关闭「使用默认攻略源」后编辑
+# config/user 下的同名文件中 all: true 时，仍然使用本文件
 
-ALL: false
+# 每一段为一个攻略源，按顺序发送；可点击合集链接查看攻略图片样式
 
-#每一段为一个攻略源，可点击合集链接查看攻略图片样式，不满意的自行删除
-
-olds:  #不能改
-news: 
+news:
   - source: HoYo青枫
     collection_id: 
       - 1751099

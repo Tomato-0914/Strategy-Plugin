@@ -1,625 +1,283 @@
-import moraBase from './moraBase.js';
-import commonTools from './commonTools.js';
-import moracfg from './config.js';
-import gsCfg from '../../genshin/model/gsCfg.js';
-import _ from 'lodash';
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from 'node:fs'
+import path from 'node:path'
+import _ from 'lodash'
+import cfg, { GAME_DIR, GAME_NAME } from './config.js'
+import commonTools from './commonTools.js'
 import { logger } from './setting.js'
-const _path = process.cwd();
 
-export default class roleGuide extends moraBase {
+const _path = process.cwd()
+const IMG_EXT = ['jpg', 'png', 'webp', 'jpeg']
 
-    /**
-     * 获取 OSS 参数（使用 getter 确保每次获取最新配置）
-     * 支持热加载：配置文件修改后自动生效
-     */
-    get oss() {
-        const config = moracfg.getConfigWithCache(moracfg.user, 'config')
-        return config.ossParams
+/** 米游社合集接口 */
+const MYS_COLLECTION_API = 'https://bbs-api.mihoyo.com/post/wapi/getPostFullInCollection?&gids=2&order_type=2&collection_id='
+
+/** 图鉴插件（Atlas）材料图目录 */
+const ATLAS_DIR = {
+  gs: ['Genshin-Atlas/material for role'],
+  sr: ['star-rail-atlas/material for role', 'star-rail-atlas/guide for role'],
+  zzz: ['zzz-atlas/material for role']
+}
+
+/** 有图鉴材料图时跳过的攻略源（内容与材料图重复） */
+const ATLAS_EXCLUDE = {
+  sr: ['听语惊花'],
+  zzz: ['角色材料']
+}
+
+/** 没找到攻略图的记录，期间不再重复请求米游社（#更新xx攻略 不受影响） */
+const missCache = new Map()
+const MISS_TTL = 6 * 60 * 60 * 1000
+
+/** 读取 json，带 mtime 缓存，文件更新后自动重新读取 */
+const jsonCache = new Map()
+function readJsonCached (file) {
+  try {
+    const mtime = fs.statSync(file).mtimeMs
+    const hit = jsonCache.get(file)
+    if (hit && hit.mtime === mtime) return hit.data
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+    jsonCache.set(file, { mtime, data })
+    return data
+  } catch (err) {
+    if (err.code !== 'ENOENT') logger.warn(`读取 ${file} 失败：${err.message}`)
+    return null
+  }
+}
+
+/** 加载 genshin 插件的 gsCfg（可选依赖） */
+let gsCfg
+async function getGsCfg () {
+  if (gsCfg === undefined) {
+    try {
+      gsCfg = (await import('../../genshin/model/gsCfg.js')).default
+    } catch {
+      gsCfg = null
+    }
+  }
+  return gsCfg
+}
+
+export default class RoleGuide {
+  /**
+   * @param {object} e 消息事件
+   * @param {'gs'|'sr'|'zzz'} game
+   */
+  constructor (e, game = 'gs') {
+    this.e = e
+    this.game = GAME_DIR[game] ? game : 'gs'
+    this.gameDir = GAME_DIR[this.game]
+    this.cachePath = path.join(cfg.data, 'roleGuides')
+    this.addOnsPath = path.join(this.cachePath, 'add_ons')
+  }
+
+  get logFnc () {
+    return this.e?.logFnc || ''
+  }
+
+  /** OSS 图片处理参数（热加载） */
+  get oss () {
+    return cfg.config.ossParams || ''
+  }
+
+  /** 攻略作者 json：resources/data/strategy/<作者>.json → { 作者: { GameDir: [{name, link}] } } */
+  getStrategyLists () {
+    const dir = path.join(cfg.res, 'strategy')
+    if (!fs.existsSync(dir)) return {}
+    const ret = {}
+    for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
+      const json = readJsonCached(path.join(dir, file))
+      if (!json || typeof json !== 'object') continue
+      for (const [author, games] of Object.entries(json)) {
+        const list = games?.[this.gameDir]
+        if (Array.isArray(list)) ret[author] = list.filter(v => v?.name)
+      }
+    }
+    return ret
+  }
+
+  /**
+   * 角色名解析：别名表 → 攻略 json 中的角色名 → genshin 插件角色表（仅原神）
+   * 认不出的名字返回 false，交给其他插件处理
+   */
+  async getRoleName (name) {
+    name = name.trim()
+    if (!name) return false
+
+    const alias = readJsonCached(path.join(cfg.res, 'alias', `${this.game}alias.json`)) || {}
+    for (const [key, list] of Object.entries(alias)) {
+      if (!key) continue
+      if (key === name || (Array.isArray(list) && list.includes(name))) return key
     }
 
-    constructor(e) {
-        super(e)
-        this.url = 'https://bbs-api.mihoyo.com/post/wapi/getPostFullInCollection?&gids=2&order_type=2&collection_id='
-        this.game = this.e.game || 'gs'
+    const lists = this.getStrategyLists()
+    if (_.some(lists, list => list.some(v => v.name === name))) return name
 
-        this.isSr = this.game === 'sr'
-        const configName = `${this.game === 'gs' ? 'r' : `${this.game}R`}oleGuides`
+    if (this.game === 'gs') {
+      const role = (await getGsCfg())?.getRole?.(name)
+      if (role?.name) return role.name
+    }
+    return false
+  }
 
-        // 先读取 user 目录获取 all 开关状态
-        let userConfig = moracfg.getfileYaml(moracfg.user, configName)
-        // 处理 all 值（支持 true/false/1/0）
-        const allEnabled = userConfig && (userConfig.all === true || userConfig.all === 1 || userConfig.all === 'true')
+  /**
+   * 查询角色攻略
+   * @param {string} name 用户输入的角色名
+   * @param {boolean} isUpdate 是否强制重新下载
+   * @returns 待发送的消息；认不出角色返回 false；没有攻略图时已回复提示，返回 null
+   */
+  async getGuide (name, isUpdate = false) {
+    const roleName = await this.getRoleName(name)
+    if (!roleName) return false
 
-        // 根据 all 开关决定读取哪个目录的配置
-        // all: true  -> 读取 default 目录（使用默认攻略）
-        // all: false -> 读取 user 目录（使用自定义攻略）
-        let rawConfig
-        if (allEnabled) {
-            logger.log(`[${this.game}] all=true，读取 default 目录默认攻略`)
-            rawConfig = moracfg.getfileYaml(moracfg.def, configName)
-        } else {
-            logger.log(`[${this.game}] all=false，读取 user 目录自定义攻略`)
-            rawConfig = userConfig
-        }
+    const msg = []
 
-        // 处理配置格式：原神是 {olds, news}，星铁/绝区零新格式是 {ALL, list}
-        if (this.game === 'gs') {
-            this.uploader = rawConfig
-        } else {
-            // 星铁/绝区零：支持新格式 {ALL, list} 和旧格式（直接数组）
-            if (rawConfig && Array.isArray(rawConfig.list)) {
-                this.uploader = rawConfig.list
-            } else if (Array.isArray(rawConfig)) {
-                this.uploader = rawConfig
-            } else {
-                this.uploader = []
-            }
-        }
-        this.resPath = moracfg.getMoraPlus(this.game, 'role')
-        this.path = `${moracfg.getMoraPath('data')}roleGuides`
+    // 图鉴插件材料图
+    const atlas = this.findAtlas(roleName)
+    let sources = cfg.getGuideSources(this.game)
+    if (atlas) {
+      msg.push(atlas)
+      sources = sources.filter(v => !(ATLAS_EXCLUDE[this.game] || []).includes(v.source))
     }
 
-    async strategies(name, isUpdate) {
-        let role = gsCfg.getRole(name)
-        if (!role) return false
+    // 自制图包（add_ons）优先于同名攻略源
+    const addOns = this.findAddOns(roleName)
+    const addOnAuthors = addOns.map(v => v.author)
+    sources = sources.filter(v => !addOnAuthors.includes(v.source))
 
-        //  适配多属性主角别名
+    for (const author of sources) {
+      const file = path.join(this.cachePath, author.source, this.gameDir, `${roleName}.jpg`)
+      if (fs.existsSync(file) && !isUpdate) {
+        msg.push(file)
+        continue
+      }
+      const missKey = `${this.game}:${author.source}:${roleName}`
+      if (!isUpdate && Date.now() - (missCache.get(missKey) || 0) < MISS_TTL) continue
+      if (await this.getImg(roleName, author, file)) {
+        missCache.delete(missKey)
+        msg.push(file)
+      } else {
+        missCache.set(missKey, Date.now())
+      }
+    }
+    msg.push(...addOns.map(v => v.file))
 
-        //    从本地文件加载别名数据
-        async function loadAliases() {
-            const filePath = path.join(`${_path}/plugins/mora-plugin/resources/mora-plugin-res/moraothername/gsalias.json`); // JSON 文件的路径
-            try {
-                const data = fs.readFileSync(filePath, 'utf8');
-                return JSON.parse(data);
-            } catch (error) {
-                logger.error('Failed to load aliases:', error);
-                return {}; // 返回空对象作为兜底
-            }
-        }//    从本地文件加载别名数据
+    const imgs = _.uniq(msg).map(v => segment.image(`file://${v}`))
+    return await this.replyStrategies(imgs, roleName)
+  }
 
+  async replyStrategies (msg, name) {
+    if (_.isEmpty(msg)) {
+      await this.e.reply(`${GAME_NAME[this.game]}暂无角色【${name}】的攻略图\n可以稍后发送【#更新${name}攻略】重试`, false, { at: false, recallMsg: 30 })
+      return null
+    }
+    return await commonTools.makeMsg(this.e, msg, `${GAME_NAME[this.game]} ${name} 攻略\n图片来自米游社各攻略作者，仅供学习交流`)
+  }
 
-        async function getFormalName(role) {        // 根据传入的值查找对应的正式名称
-            const defAlias = await loadAliases();
-            for (const [key, aliases] of Object.entries(defAlias)) {            // 遍历键值对
-                if (aliases.includes(role)) {                // 如果传入的值在别名列表中，返回对应的键
-                    return key;
-                }
-            }
-            return role;            // 如果没有找到匹配的键或值，返回原始值
+  /** 图鉴插件（plugins/Atlas 或 plugins/atlas）中的材料图 */
+  findAtlas (name) {
+    for (const plugin of ['Atlas', 'atlas']) {
+      for (const dir of ATLAS_DIR[this.game] || []) {
+        for (const ext of ['png', 'jpg', 'webp']) {
+          const file = path.join(_path, 'plugins', plugin, dir, `${name}.${ext}`)
+          if (fs.existsSync(file)) return file
         }
+      }
+    }
+    return null
+  }
 
-        role.name = await getFormalName(name);
+  /**
+   * 自制图包：data/roleGuides/add_ons/<作者>/<GameDir>/<角色>.jpg
+   * 原神图包也可以不建 GenshinImpact 目录，直接放在 add_ons/<作者>/<角色>.jpg
+   */
+  findAddOns (name) {
+    if (!fs.existsSync(this.addOnsPath)) return []
+    const ret = []
+    for (const author of fs.readdirSync(this.addOnsPath)) {
+      const dirs = [path.join(this.addOnsPath, author, this.gameDir)]
+      if (this.game === 'gs') dirs.push(path.join(this.addOnsPath, author))
+      const file = dirs
+        .flatMap(dir => IMG_EXT.map(ext => path.join(dir, `${name}.${ext}`)))
+        .find(f => fs.existsSync(f))
+      if (file) ret.push({ author, file })
+    }
+    return ret
+  }
 
-        let guide = _.concat(this.uploader.news, this.uploader.olds)
-        let dir = this.dirPath(role.name, '', '', this.game)
+  /** 给米游社图床链接加上 OSS 压缩参数 */
+  withOss (url) {
+    if (!this.oss || url.includes('?')) return url
+    return /miyoushe\.com|mihoyo\.com/.test(url) ? url + this.oss : url
+  }
 
-        // 查找存在的 atlas 文件（支持多种扩展名和大小写）
-        const atlasPaths = []
-        for (const dir of ['Atlas', 'atlas']) {
-            for (const ext of ['png', 'jpg', 'webp']) {
-                atlasPaths.push(`${_path}/plugins/${dir}/Genshin-Atlas/material for role/${role.name}.${ext}`)
-            }
-        }
-        let atlas = this.findExistingPath(atlasPaths)
-        let msg = []
-
-        if (atlas) {
-            msg.push(atlas)
-        }
-        let xf = true
-        for (let i in dir) {
-            let success = true
-            if (!fs.existsSync(dir[i]) || (isUpdate && !dir[i].includes('/add_ons/'))) {
-                success = await this.getImg(role.name, guide[i], dir[i])
-            }
-            if (success) {
-                if (_.includes(dir[i], `${this.resPath}/Guides`) && _.includes(dir[i], role.name)) {
-                    xf = false
-                }
-                if (!xf && _.includes(dir[i], `/1/${role.name}`)) {
-                    continue
-                }
-                msg.push(dir[i])
-            }
-        }
-
-        msg = _.map(_.uniq(msg), v => segment.image(v))
-        return await this.replyStrategies(msg, role.name)
+  /**
+   * 下载攻略图
+   * 1. 先从 resources/data/strategy/<作者>.json 中找图片链接
+   * 2. 找不到或下载失败，再从米游社合集接口抓取
+   * @param {string} name 角色名
+   * @param {{source: string, collection_id: number[]}} author 攻略源
+   * @param {string} file 保存路径
+   */
+  async getImg (name, author, file) {
+    const link = this.findLocalLink(name, author.source)
+    if (link) {
+      logger.mark(`${this.logFnc} 下载 ${author.source}-${name} 攻略图（本地数据）`)
+      if (await commonTools.download(this.withOss(link), file)) return true
+      logger.warn(`${this.logFnc} 本地数据链接下载失败，改用米游社接口：${link}`)
     }
 
-    async srStrategies(name, isUpdate) {
-        let role = {}
+    const url = await this.findMysLink(name, author)
+    if (!url) return false
 
-        /** 主角 */
-        let trailblazer = commonTools.trailblazer(name, '攻略')
-        if (trailblazer) {
-            if (!trailblazer.name) {
-                await this.e.reply(trailblazer)
-                return
-            } else role = trailblazer
-        }
+    logger.mark(`${this.logFnc} 下载 ${author.source}-${name} 攻略图（米游社）`)
+    if (!await commonTools.download(this.withOss(url), file)) return false
+    return true
+  }
 
-        //     if (_.isEmpty(role)) role = gsCfg.getRole(name, '', this.isSr)
-        //     if (!role) return false
+  /** 在攻略作者 json 中查找链接：先精确匹配，再唯一的包含匹配 */
+  findLocalLink (name, source) {
+    const list = this.getStrategyLists()[source]
+    if (!list) return null
+    let entry = list.find(v => v.name === name && v.link)
+    if (!entry) {
+      const fuzzy = list.filter(v => v.link && v.name.includes(name))
+      if (fuzzy.length === 1) entry = fuzzy[0]
+    }
+    return entry?.link || null
+  }
 
-        //     从本地文件加载别名数据
-        async function loadAliases() {
-            const filePath = path.join(`${_path}/plugins/mora-plugin/resources/mora-plugin-res/moraothername/sralias.json`); // JSON 文件的路径
-            try {
-                const data = fs.readFileSync(filePath, 'utf8');
-                return JSON.parse(data);
-            } catch (error) {
-                logger.error('Failed to load aliases:', error);
-                return role; // 返回空对象作为兜底
-            }
-        }
-
-        async function getFormalName(role) {        // 根据传入的值查找对应的正式名称
-            const defAlias = await loadAliases();
-            for (const [key, aliases] of Object.entries(defAlias)) {            // 遍历键值对
-                if (aliases.includes(role)) {     // 如果传入的值在别名列表中，返回对应的键
-                    return key;
-                }
-            }
-            return role;    // 如果没有找到匹配的键或值，返回原始值
-        }
-        role.name = await getFormalName(name);   // 获取正式名称并赋值给 role.name
-
-        // 查找存在的 star-rail-atlas 文件（支持多种扩展名和大小写）
-        const srAtlasPaths = []
-        for (const dir of ['Atlas', 'atlas']) {
-            for (const ext of ['png', 'jpg', 'webp']) {
-                srAtlasPaths.push(`${_path}/plugins/${dir}/star-rail-atlas/material for role/${role.name}.${ext}`)
-                srAtlasPaths.push(`${_path}/plugins/${dir}/star-rail-atlas/material for role/${role.roleId}.${ext}`)
-                srAtlasPaths.push(`${_path}/plugins/${dir}/star-rail-atlas/guide for role/${role.name}.${ext}`)
-                srAtlasPaths.push(`${_path}/plugins/${dir}/star-rail-atlas/guide for role/${role.roleId}.${ext}`)
-            }
-        }
-        let atlas = this.findExistingPath(srAtlasPaths)
-
-        let msg = []
-        if (atlas) {
-            msg.push(atlas)
-            this.uploader = _.filter(this.uploader, v => v.source !== '听语惊花')
-        }
-
-        let sources = _.map(this.uploader, 'source')
-        let dir = _.map(sources, v => `${this.path}/${v}/StarRail/${role.name}.jpg`)
-
-        for (let i in dir) {
-            let success = true
-            if (!fs.existsSync(dir[i]) || isUpdate) {
-                success = await this.getImg(role.name, this.uploader[i], dir[i], (role.reg || ''))
-            }
-            if (success) msg.push(dir[i])
-        }
-
-        msg = _.map(_.uniq(_.concat(msg)), v => segment.image(v))
-        return await this.replyStrategies(msg, role.name)
+  /** 从米游社合集中查找角色攻略图 */
+  async findMysLink (name, author) {
+    if (_.isEmpty(author.collection_id)) {
+      logger.mark(`${this.logFnc} 攻略源 ${author.source} 未配置合集 ID，跳过`)
+      return null
     }
 
-    async zzzStrategies(name, isUpdate) {
-        let role = {};
+    const res = await Promise.all(author.collection_id.map(id => commonTools.getFetchData(MYS_COLLECTION_API + id)))
+    const posts = _.flatten(res.map(v => v?.data?.posts || []))
 
-        //       从本地文件加载别名数据
-        async function loadAliases() {
-            const filePath = path.join(`${_path}/plugins/mora-plugin/resources/mora-plugin-res/moraothername/zzzalias.json`); // JSON 文件的路径
-            try {
-                const data = fs.readFileSync(filePath, 'utf8');
-                return JSON.parse(data);
-            } catch (error) {
-                logger.error('Failed to load aliases:', error);
-                return role; // 返回空对象作为兜底
-            }
-        }        //       从本地文件加载别名数据
-
-        async function getFormalName(role) {        // 根据传入的值查找对应的正式名称
-            const defAlias = await loadAliases();
-            for (const [key, aliases] of Object.entries(defAlias)) {            // 遍历键值对
-                if (aliases.includes(role)) {     // 如果传入的值在别名列表中，返回对应的键
-                    return key;
-                }
-            }
-            return role;    // 如果没有找到匹配的键或值，返回原始值
-        }
-        role.name = await getFormalName(name);   // 获取正式名称并赋值给 role.name
-
-        let msg = []
-        // 查找存在的 zzz-atlas 文件（支持多种扩展名和大小写）
-        const zzzAtlasPaths = []
-        for (const dir of ['Atlas', 'atlas']) {
-            for (const ext of ['png', 'jpg', 'webp']) {
-                zzzAtlasPaths.push(`${_path}/plugins/${dir}/zzz-atlas/material for role/${role.name}.${ext}`)
-            }
-        }
-        let atlas = this.findExistingPath(zzzAtlasPaths)
-        let remove = '角色材料'
-        if (atlas) {
-            msg.push(atlas)
-            this.uploader = _.filter(this.uploader, v => v.source !== remove)
-        }
-
-        let sources = _.map(this.uploader, 'source')
-        let dir = _.map(sources, v => `${this.path}/${v}/ZenlessZoneZero/${role.name}.jpg`)
-
-        for (let i in dir) {
-            let success = true
-            if (!fs.existsSync(dir[i]) || isUpdate) {
-                success = await this.getImg(role.name, this.uploader[i], dir[i], (role.reg || ''))
-            }
-            if (success) msg.push(dir[i])
-        }
-
-        msg = _.map(_.uniq(_.concat(msg)), v => segment.image(v))
-        return await this.replyStrategies(msg, role.name)
-    }
-    async replyStrategies(msg, name) {
-        const zones = {
-            gs: '原神',
-            sr: '星铁',
-            zzz: '绝区零'
-        }
-        if (_.isEmpty(msg)) {
-            await this.e.reply(`${zones[this.game]} 暂无角色 ${name} 的攻略数据\n角色名正确吗？前缀符号正确吗？\n原神攻略发送 #胡桃攻略\n星铁攻略发送 *流萤攻略\n绝区零攻略发送 %柳攻略\n\n原神主角攻略发送 #风主攻略 #火主攻略`, false, { at: false, recallMsg: 30 })
-            return false
-        }
-
-        return await commonTools.makeMsg(this.e, msg, `${name}攻略 来啦~ \n（mora-plugin-fork 提供）\n仓库：https://gitee.com/mingdiandianzhu/data`)
+    const topicHit = []
+    for (const val of posts) {
+      const subject = val?.post?.subject || ''
+      // OH是姜姜呀 的合集是一帖多角色，按【角色名】定位图片
+      if (author.collection_id.includes(341523)) {
+        const content = (val?.post?.structured_content || '').replace(/\\\/\{\}/g, '')
+        if (!content.includes(name + '】')) continue
+        const imgId = new RegExp(_.escapeRegExp(name) + '】.*?image\\\\?":\\\\?"(.*?)\\\\?"').exec(content)?.[1]
+        const img = _.find(val.image_list, v => v.image_id === imgId)
+        if (img?.url) return img.url
+        continue
+      }
+      if (subject.includes(name)) return this.getMax(val.image_list)
+      if (_.map(val.topics, 'name').includes(name)) topicHit.push(this.getMax(val.image_list))
     }
 
-    async getHelp() {
-        this.resPath += this.isSr ? '/RefStat' : '/YieldCurve'
-        await this.checkPath(this.resPath)
+    if (topicHit[0]) return topicHit[0]
+    logger.mark(`${this.logFnc} 暂无 ${name} 攻略（${author.source}）`)
+    return null
+  }
 
-        let msg = [segment.image(`file://${this.resPath}/帮助.png`)]
-        if (this.isSr) {
-            msg.push('请使用【*希儿参考面板】或【#星铁罗刹参考面板】进行使用')
-        } else {
-            msg.push('角色默认配置：五星0命，四星满命，天赋满级')
-            msg.push('曲线详细帮助：\n收益曲线说明书：https://www.miyoushe.com/ys/article/28119112\n《属性收益论》：https://www.miyoushe.com/ys/article/34217426\n《属性收益论》附录：https://www.miyoushe.com/ys/article/35015246')
-        }
-
-        return msg
-    }
-
-    async stat_curve(name) {
-        await this.checkPath(this.resPath)
-
-        let refPath = `${this.resPath}/RefStat`
-        let curvePath = `${this.resPath}/YieldCurve`
-
-        let role = {}
-        /** 星铁主角特殊处理 */
-        if (this.isSr) {
-            let trailblazer = commonTools.trailblazer(name, '参考面板')
-            if (trailblazer) {
-                if (!trailblazer.name) {
-                    await this.e.reply(trailblazer)
-                    return
-                } else role = trailblazer
-            }
-        }
-
-        if (_.isEmpty(role)) role = gsCfg.getRole(name, '', this.isSr)
-        if (!role) return false
-        /** 主角特殊处理 */
-        if (commonTools.travelerID.includes(Number(role.roleId))) {
-            let traveler = commonTools.traveler(role.alias, name, '进阶参考')
-            if (_.isEqual(role.alias, traveler)) {
-                role.name = traveler
-            } else {
-                await this.e.reply(traveler)
-                return
-            }
-        }
-
-        let ref = fs.readdirSync(refPath)
-        ref = _.filter(ref, v => _.includes(v, role.name))
-        let curve = fs.existsSync(curvePath) ? fs.readdirSync(curvePath) : []
-        curve = _.filter(curve, v => _.includes(v, role.name))
-        if (_.isEmpty(ref) && _.isEmpty(curve)) {
-            await this.e.reply(`暂无${role.name}进阶参考捏`)
-            return
-        }
-
-        ref = _.map(ref, v => segment.image(`file://${refPath}/${v}`))
-        curve = _.map(curve, v => segment.image(`file://${curvePath}/${v}`))
-        let msg = [...ref, 'arti', ...curve]
-
-        let notes = this.advancedInfo(role.name)
-        let idx = _.findIndex(msg, i => _.isEqual(i, 'arti'))
-        msg[idx] = notes.arti ? `圣遗物思路推荐：\n${notes.arti}` : ''
-        if (!_.isEmpty(notes?.brief)) msg.push(`【蓝佬小课堂】：\n${notes.brief}`)
-        msg[0] = _.compact([msg[0], notes.url])
-        msg = _.compact(msg)
-
-        return await commonTools.makeMsg(this.e, msg, `${role.name}进阶参考 @blue菌hehe`)
-    }
-
-    // 找本地图片
-    findPack(path, name, game = '') {
-        const gameDir = {
-            gs: '/GenshinImpact',
-            sr: '/StarRail',
-            zzz: '/ZenlessZoneZero'
-        }
-        if (!fs.existsSync(path)) return []
-        let _sources = fs.readdirSync(path)
-        let dir = []
-        _.each(_sources, author => {
-            let _author = path.includes('add_ons') ? `${path}/${author}${gameDir[game]}` : `${path}/${author}`
-            let _roles = fs.existsSync(_author) ? fs.readdirSync(_author) : []
-            _roles = _.filter(_roles, r => _.includes(r, name))
-            let au_path = _.isEmpty(_roles) ? false : `${_author}/${_roles[0]}`
-            dir.push(au_path)
-        })
-
-        dir = _.compact(dir)
-        return dir
-    }
-
-    /** 路径处理 */
-    dirPath(name, res, add, game = '') {
-        // 适配miaoYZ
-        let defpath = `${_path}/temp/strategy/`
-        if (!fs.existsSync(defpath)) {
-            defpath = `${_path}/data/strategy/`
-        }
-
-        let olds = _.map(this.uploader.olds, (v) => v.source)
-        let news = _.map(this.uploader.news, (v) => v.source)
-        let dir = _.take(fs.readdirSync(defpath), 4)
-
-        // 游戏目录映射
-        const gameDir = {
-            gs: 'GenshinImpact',
-            sr: 'StarRail',
-            zzz: 'ZenlessZoneZero'
-        }
-        const subDir = gameDir[game] || ''
-
-        let _dir = []
-        // news
-        _.each(news, (n) => {
-            let npath = subDir ? `${this.path}/${n}/${subDir}/${name}.jpg` : `${this.path}/${n}/${name}.jpg`
-            _.each(res, (r) => {
-                if (_.includes(r, n)) {
-                    npath = r
-                }
-            })
-            _dir.push(npath)
-        })
-        // olds
-        _.each(olds, (o, idx) => {
-            let _def = `${defpath}${idx + 1}/${name}.jpg`
-            _.each(add, (a) => {
-                if (_.includes(a, o)) {
-                    _def = a
-                }
-            })
-            _dir.push(_def)
-        })
-
-        dir = _.concat(_dir, add)
-        dir = _.uniq(dir)
-        return dir
-    }
-
-    advancedInfo(name) {
-        let artiRef = moracfg.getfileYaml(`${this.resPath}/RefStat/`, 'RefNotes')
-        let arti = artiRef[name] || {}
-        let notes = { url: artiRef.url, arti: false }
-        if (!_.isEmpty(arti)) {
-            notes.arti = `主词条：${arti.mainProp}\n副词条：${arti.viceProp}`
-            notes.brief = arti.brief
-        }
-        return notes
-    }
-
-    /**
-     * 下载攻略图
-     * 优化：优先从本地 strategy 目录下的作者 json 文件里取 url，
-     * 如果找不到或下载失败，才回退到米游社接口抓取。
-     * @param {String} name 角色名
-     * @param {Object} author 作者（必须包含 source、collection_id 等）
-     */
-    async getImg(name, author, sfPath, filter = '') {
-        // helper: 从本地 strategy JSON 目录中查找作者对应的 url 并下载
-        const tryLocalStrategy = async () => {
-            try {
-                const strategyDir = path.join(`${_path}/plugins/mora-plugin/resources/mora-plugin-res/strategy`)
-                if (!fs.existsSync(strategyDir)) return null
-
-                const files = fs.readdirSync(strategyDir).filter(f => f.endsWith('.json'))
-                // 游戏类型映射
-                const gameKeyMap = {
-                    'gs': 'GenshinImpact',
-                    'sr': 'StarRail',
-                    'zzz': 'ZenlessZoneZero'
-                }
-                const gameKey = gameKeyMap[this.game] || 'GenshinImpact'
-
-                for (const file of files) {
-                    const fp = path.join(strategyDir, file)
-                    let content
-                    try {
-                        content = fs.readFileSync(fp, 'utf8')
-                    } catch (err) {
-                        logger.warn(`读取本地策略文件失败：${fp}，跳过。错误：${err}`)
-                        continue
-                    }
-                    let json
-                    try {
-                        json = JSON.parse(content)
-                    } catch (err) {
-                        logger.warn(`解析本地策略 JSON 失败：${fp}，跳过。错误：${err}`)
-                        continue
-                    }
-
-                    // json 里的顶层 key 预期为作者名（例如 "HoYo青枫"）
-                    for (const [authorKey, authorVal] of Object.entries(json)) {
-                        if (!authorKey) continue
-                        // 必须匹配作者名，保证作者正确
-                        if (!author || authorKey !== author.source) continue
-
-                        // authorVal 结构预期包含 gameKey ('GenshinImpact' / 'StarRail' / 'ZenlessZoneZero') -> array of {name, link}
-                        const list = (authorVal && authorVal[gameKey]) || []
-                        if (!Array.isArray(list)) continue
-
-                        // 尝试精确匹配 name > 包含匹配作为降级
-                        let entry = list.find(i => i.name === name)
-                        if (!entry) entry = list.find(i => i.name && i.name.includes(name))
-
-                        if (entry && entry.link) {
-                            // 拼接 OSS 参数优化图片下载
-                            const downloadUrl = entry.link + this.oss
-                            // 找到匹配项，下载图片
-                            logger.mark(`${this.e.logFnc} 从本地策略文件(${author.source})获取 ${name} 的图片，下载地址：${downloadUrl}`)
-
-                            // 确保目录存在
-                            const dir = path.dirname(sfPath)
-                            if (!fs.existsSync(dir)) {
-                                fs.mkdirSync(dir, { recursive: true })
-                            }
-
-                            // 下载图片
-                            try {
-                                const response = await fetch(downloadUrl)
-                                if (response.ok) {
-                                    const arrayBuffer = await response.arrayBuffer()
-                                    const buffer = Buffer.from(arrayBuffer)
-                                    fs.writeFileSync(sfPath, buffer)
-                                    logger.mark(`${this.e.logFnc} 下载本地策略图片成功：${author.source}-${name}`)
-                                    return true
-                                } else {
-                                    logger.warn(`${this.e.logFnc} 下载本地策略图片失败，HTTP状态：${response.status}`)
-                                }
-                            } catch (downloadErr) {
-                                logger.warn(`${this.e.logFnc} 下载本地策略图片异常：${downloadErr.message}`)
-                            }
-
-                            // 下载失败，返回原始 link 让上层继续尝试（上层会自行拼接 oss）
-                            return entry.link
-                        }
-                    }
-                }
-                return null
-            } catch (err) {
-                logger.warn(`本地策略查找出错：${err}`)
-                return null
-            }
-        }
-
-        // 先试本地
-        try {
-            const localResult = await tryLocalStrategy()
-            if (localResult === true) {
-                // 下载成功
-                return true
-            } else if (typeof localResult === 'string') {
-                // 返回了 url 但下载失败，尝试用 commonTools 下载
-                logger.mark(`${this.e.logFnc} 尝试用 commonTools 下载：${localResult}`)
-                if (!await commonTools.download(localResult + this.oss, sfPath)) {
-                    logger.warn(`${this.e.logFnc} 本地链接下载失败，回退到米游社抓取：${localResult}`)
-                    // 继续走米游社逻辑 below
-                } else {
-                    logger.mark(`${this.e.logFnc} 下载本地策略图片成功：${author?.source || '未知作者'}-${name}`)
-                    return true
-                }
-            }
-            // localResult 为 null，继续走米游社逻辑
-        } catch (err) {
-            logger.warn(`尝试本地策略下载时发生异常：${err}`)
-            // 继续到米游社抓取
-        }
-
-        // fallback to existing 米游社抓取逻辑
-        let msyRes = []
-        // collection_id 必须存在并且作者对象保持一致
-        if (!author || !author.collection_id) {
-            logger.warn(`作者 ${author?.source} 未提供 collection_id，且本地策略未命中，无法从米游社抓取`)
-            return false
-        }
-
-        for (const i of author.collection_id) {
-            msyRes.push(await commonTools.getFetchData(this.url + i))
-        }
-
-        try {
-            msyRes = await Promise.all(msyRes)
-        } catch (error) {
-            logger.error(`米游社接口报错：${error}}`)
-            return false
-        }
-
-        let posts = _.flatten(_.map(msyRes, item => item.data.posts))
-        let url
-        let _post = []
-        for (let val of posts) {
-            /** 攻略图个别来源特殊处理 */
-            if (author.collection_id.includes(341523)) {
-                if (val.post.structured_content.includes(name + '】')) {
-                    let content = val.post.structured_content.replace(/\\\/\{\}/g, '')
-                    // 常驻角色特殊处理
-                    let pattern = new RegExp(name + '】.*?image\\\\?":\\\\?"(.*?)\\\\?"')
-                    let imgId = pattern.exec(content)[1]
-                    url = _.find(val.image_list, v => v.image_id === imgId).url
-                    break
-                }
-            } else {
-                if (val.post.subject.includes(name)) {
-                    url = this.getMax(val.image_list)
-                    break
-                } else if (filter) {
-                    filter = new RegExp(filter)
-                    if (filter.test(val.post.subject)) {
-                        url = this.getMax(val.image_list)
-                        break
-                    }
-                } else if (_.map(val.topics, 'name').includes(name)) {
-                    _post.push(this.getMax(val.image_list))
-                }
-            }
-        }
-
-        if (!url) {
-            if (_.isEmpty(_post)) {
-                logger.mark(`暂无${name}攻略（${author.source}）`)
-                return false
-            } else url = _post[0]
-        }
-
-        logger.mark(`${this.e.logFnc} 下载${author.source}-${name}攻略图`)
-
-        if (!await commonTools.download(url + this.oss, sfPath)) return false
-
-        logger.mark(`${this.e.logFnc} 下载${author.source}-${name}攻略成功`)
-
-        return true
-    }
-
-    getMax(imgs) {
-        return _.maxBy(imgs, v => Number(v.size)).url
-    }
-
-    async checkPath(path) {
-        if (!fs.existsSync(path)) {
-            await this.e.reply(moracfg.resNotFound, true)
-            return false
-        }
-    }
-
-    /**
-     * 查找存在的路径（支持多个候选路径）
-     * @param {string[]} paths 候选路径数组
-     * @returns {string|null} 第一个存在的路径或 null
-     */
-    findExistingPath(paths) {
-        for (const p of paths) {
-            if (fs.existsSync(p)) return p
-        }
-        return null
-    }
+  getMax (imgs = []) {
+    return _.maxBy(imgs, v => Number(v.size))?.url
+  }
 }

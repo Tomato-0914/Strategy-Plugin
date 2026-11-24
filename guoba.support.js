@@ -8,14 +8,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export function supportGuoba() {
   return {
     pluginInfo: { 
-      name: 'mora-plugin',
-      title: '摩拉插件',
-      author: '@Rrrrrrray',
-      authorLink: 'https://gitee.com/Rrrrrrray',
-      link: 'https://gitee.com/Rrrrrrray/mora-plugin',
+      name: 'Strategy-Plugin',
+      title: '攻略插件',
+      author: '@Tomato-0914',
+      authorLink: 'https://github.com/Tomato-0914',
+      link: 'https://github.com/Tomato-0914/Strategy-Plugin',
       isV3: true,
-      isV2: true,
-      description: '【此版本为fork】提供角色攻略、配队、卡池等信息的摩拉插件',
+      isV2: false,
+      description: '原神/星铁/绝区零角色攻略一图流（基于 mora-plugin 修改）',
       // 使用图标路径而不是图标名称
       iconPath: `${__dirname}/resources/img/icons/logo.png`
     },
@@ -104,7 +104,7 @@ export function supportGuoba() {
                     { label: '卡池', value: 'emerald' },
                     { label: '魈', value: 'xiao' },
                     { label: '恐龙', value: 'dinosaur' },
-                    { label: '虚空', value: 'akasha' }
+                    { label: '更新', value: 'update' }
                   ]
                 }
               }
@@ -139,7 +139,7 @@ export function supportGuoba() {
                 bottomHelpMessage: '指令图标',
                 componentProps: {
                   options: [
-                    { label: 'Monkas', value: 'monkas' },
+                    { label: '派蒙', value: 'paimon' },
                     { label: '队伍', value: 'team' },
                     { label: '更新', value: 'update' }
                   ]

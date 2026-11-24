@@ -1,41 +1,15 @@
 import _ from 'lodash'
 import gsCfg from '../../genshin/model/gsCfg.js'
 import moment from 'moment'
-import fs from 'node:fs'
-import moraBase from './moraBase.js'
-import moracfg from './config.js'
 import commonTools from './commonTools.js'
 import { Weapon } from '../../miao-plugin/models/index.js'
 import { poolDetail, mixPoolDetail } from '../../miao-plugin/resources/meta-gs/info/pool.js'
 import { poolDetailSr } from '../../miao-plugin/resources/meta-sr/info/index.js'
 
-export default class banner extends moraBase {
-  constructor (e) {
-    super(e)
-    this.path = moracfg.getGameRes('banner')
-    this.game = this.e.game || 'gs'
-  }
-
-  async schedules (type) {
-    if (!fs.existsSync(this.path)) {
-      await this.e.reply('还没下载资源包，复刻表功能用不了捏')
-      return false
-    }
-
-    let dir = fs.readdirSync(this.path)
-    if (this.game === 'sr') dir = _.filter(dir, v => v.includes('星'))
-    if (type) dir = _.filter(dir, v => v.includes(type))
-
-    let msg = []
-    _.each(dir, v => {
-      let imgPath = `${this.path}/${v}`
-      if (fs.existsSync(imgPath)) {
-        msg.push(segment.image(`file://${imgPath}`))
-      }
-    })
-
-    if (_.isEmpty(msg)) return false
-    return await commonTools.makeMsg(this.e, msg, '复刻时间表')
+export default class banner {
+  constructor (e, game = 'gs') {
+    this.e = e
+    this.game = game
   }
 
   async searchBanners (query) {

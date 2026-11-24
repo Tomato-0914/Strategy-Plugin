@@ -1,5 +1,5 @@
-# ignore files #
+# 运行时缓存（攻略图、深渊图）
 /data/
-/resources/mora-plugin-res/
+# 用户配置
 /config/user/
 /node_modules/
