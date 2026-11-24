@@ -287,6 +287,7 @@ class ConfigManager {
     // 确保数据结构正确，与 schemas 的 field 映射一致
     const result = {
       forwardMsg: config.forwardMsg !== undefined ? config.forwardMsg : 1,
+      buttonMode: config.buttonMode !== undefined ? config.buttonMode : 'auto',
       logError: config.logError !== false,
       logLog: config.logLog === true || config.logLog === 1 || config.logLog === 'true',
       logMark: config.logMark !== false,
@@ -315,7 +316,7 @@ class ConfigManager {
     const promises = []
 
     // 将基础配置保存到 config.yaml（包含 forwardMsg、日志配置、OSS参数等）
-    const configFields = ['forwardMsg', 'logError', 'logLog', 'logMark', 'logWarn', 'ossParams']
+    const configFields = ['forwardMsg', 'buttonMode', 'logError', 'logLog', 'logMark', 'logWarn', 'ossParams']
     const hasLogConfig = configFields.some(field => data[field] !== undefined)
     
     if (hasLogConfig) {
@@ -324,6 +325,9 @@ class ConfigManager {
       if (data.forwardMsg !== undefined) {
         logger.log(`保存配置: forwardMsg`, data.forwardMsg)
         configToSave.forwardMsg = data.forwardMsg
+      }
+      if (data.buttonMode !== undefined) {
+        configToSave.buttonMode = data.buttonMode
       }
       
       // 新的日志级别配置

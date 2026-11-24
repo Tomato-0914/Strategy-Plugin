@@ -123,19 +123,21 @@ export default class RoleGuide {
    * 查询角色攻略
    * @param {string} name 用户输入的角色名
    * @param {boolean} isUpdate 是否强制重新下载
+   * @param {number} page 按钮模式下显示第几张（从 1 开始）
    * @returns 待发送的消息；认不出角色返回 false；没有攻略图时已回复提示，返回 null
    */
-  async getGuide (name, isUpdate = false) {
+  async getGuide (name, isUpdate = false, page = 1) {
     const roleName = await this.getRoleName(name)
     if (!roleName) return false
 
-    const msg = []
+    /** [{ label: 按钮文字, file: 图片路径 }] */
+    const items = []
 
     // 图鉴插件材料图
     const atlas = this.findAtlas(roleName)
     let sources = cfg.getGuideSources(this.game)
     if (atlas) {
-      msg.push(atlas)
+      items.push({ label: '图鉴材料', file: atlas })
       sources = sources.filter(v => !(ATLAS_EXCLUDE[this.game] || []).includes(v.source))
     }
 
@@ -147,30 +149,67 @@ export default class RoleGuide {
     for (const author of sources) {
       const file = path.join(this.cachePath, author.source, this.gameDir, `${roleName}.jpg`)
       if (fs.existsSync(file) && !isUpdate) {
-        msg.push(file)
+        items.push({ label: author.source, file })
         continue
       }
       const missKey = `${this.game}:${author.source}:${roleName}`
       if (!isUpdate && Date.now() - (missCache.get(missKey) || 0) < MISS_TTL) continue
       if (await this.getImg(roleName, author, file)) {
         missCache.delete(missKey)
-        msg.push(file)
+        items.push({ label: author.source, file })
       } else {
         missCache.set(missKey, Date.now())
       }
     }
-    msg.push(...addOns.map(v => v.file))
+    items.push(...addOns.map(v => ({ label: v.author, file: v.file })))
 
-    const imgs = _.uniq(msg).map(v => segment.image(`file://${v}`))
-    return await this.replyStrategies(imgs, roleName)
+    return await this.replyStrategies(_.uniqBy(items, 'file'), roleName, page)
   }
 
-  async replyStrategies (msg, name) {
-    if (_.isEmpty(msg)) {
+  /**
+   * @param {{label: string, file: string}[]} items 攻略图
+   * @param {string} name 角色名
+   * @param {number} page 按钮模式下显示第几张
+   */
+  async replyStrategies (items, name, page = 1) {
+    if (_.isEmpty(items)) {
       await this.e.reply(`${GAME_NAME[this.game]}暂无角色【${name}】的攻略图\n可以稍后发送【#更新${name}攻略】重试`, false, { at: false, recallMsg: 30 })
       return null
     }
-    return await commonTools.makeMsg(this.e, msg, `${GAME_NAME[this.game]} ${name} 攻略\n图片来自米游社各攻略作者，仅供学习交流`)
+    if (this.useButton()) return this.makeButtonMsg(items, name, page)
+
+    const imgs = items.map(v => segment.image(`file://${v.file}`))
+    return await commonTools.makeMsg(this.e, imgs, `${GAME_NAME[this.game]} ${name} 攻略\n图片来自米游社各攻略作者，仅供学习交流`)
+  }
+
+  /**
+   * 是否使用「单张图 + 作者按钮」的形式发送
+   * 官方机器人（QQBot 适配器）不支持合并转发，默认改用按钮切换作者
+   */
+  useButton () {
+    const mode = cfg.config.buttonMode ?? 'auto'
+    if (mode === true || mode === 'always') return true
+    if (mode === false || mode === 'off') return false
+    const ids = [this.e?.bot?.adapter?.id, this.e?.bot?.adapter?.name, this.e?.adapter_id, this.e?.adapter_name, this.e?.adapter]
+    return ids.includes('QQBot') && typeof segment.button === 'function'
+  }
+
+  /** 一张攻略图 + 所有作者的按钮，点按钮发送 #角色攻略N 切换到第 N 张 */
+  makeButtonMsg (items, name, page = 1) {
+    const idx = _.clamp(Number(page) || 1, 1, items.length) - 1
+    const prefix = { gs: '#', sr: '#星铁', zzz: '#绝区零' }[this.game]
+    const buttons = items.map((v, i) => ({
+      text: `${i === idx ? '▶ ' : ''}${v.label}`,
+      callback: `${prefix}${name}攻略${i + 1}`
+    }))
+
+    const msg = [
+      `${name}攻略 ${idx + 1}/${items.length} · ${items[idx].label}`,
+      segment.image(`file://${items[idx].file}`)
+    ]
+    // 每行 4 个，最多 5 行
+    if (items.length > 1) msg.push(segment.button(..._.chunk(buttons, 4).slice(0, 5)))
+    return msg
   }
 
   /** 图鉴插件（plugins/Atlas 或 plugins/atlas）中的材料图 */

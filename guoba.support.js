@@ -38,6 +38,19 @@ export function supportGuoba() {
           }
         },
         {
+          field: 'buttonMode',
+          label: '按钮模式',
+          bottomHelpMessage: '每次只发一张攻略图，下方附各作者按钮切换。官方机器人不支持合并转发，选「自动」即可',
+          component: 'Select',
+          componentProps: {
+            options: [
+              { label: '自动（仅官方机器人）', value: 'auto' },
+              { label: '总是使用', value: 'always' },
+              { label: '不使用', value: 'off' }
+            ]
+          }
+        },
+        {
           field: 'logError',
           label: 'Error日志开关',
           bottomHelpMessage: 'false = 关闭（不显示 logger.error 日志），true = 开启（显示 logger.error 日志）',

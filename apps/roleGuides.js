@@ -4,7 +4,7 @@ import path from 'node:path'
 import cfg from '../model/config.js'
 import RoleGuide from '../model/roleGuide.js'
 
-const reg = /^[#*%]?(原神|星铁|绝区零)?(更新)?(\S+?)(攻略|一图流)$/
+const reg = /^[#*%]?(原神|星铁|绝区零)?(更新)?(\S+?)(?:攻略|一图流)(\d{1,2})?$/
 
 /**
  * 角色攻略
@@ -34,9 +34,9 @@ export class roleGuides extends plugin {
   async roleGuide () {
     const match = reg.exec(this.e.msg?.trim() || '')
     if (!match) return false
-    const [, gameName, isUpdate, roleName] = match
+    const [, gameName, isUpdate, roleName, page] = match
 
-    const msg = await new RoleGuide(this.e, this.getGame(gameName)).getGuide(roleName, !!isUpdate)
+    const msg = await new RoleGuide(this.e, this.getGame(gameName)).getGuide(roleName, !!isUpdate, Number(page) || 1)
     if (msg === false) return false
     if (msg) await this.e.reply(msg)
     return true

@@ -1,6 +1,10 @@
 # 多张图片是否使用合并转发：1 开启，0 关闭（关闭后拼接成一条消息发送）
 forwardMsg: 1
 
+# 按钮模式：每次只发一张攻略图，下方附各攻略作者的按钮，点按钮切换
+# auto：官方机器人（QQBot 适配器，不支持合并转发）自动使用；always：总是使用；off：不使用
+buttonMode: auto
+
 # 日志开关：true 显示，false 不显示
 logError: true
 logWarn: true

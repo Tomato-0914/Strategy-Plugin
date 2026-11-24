@@ -35,6 +35,21 @@ git clone --depth=1 https://github.com/Tomato-0914/Strategy-Plugin.git ./plugins
 
 角色攻略指令优先级较高（priority 5），会覆盖其他插件的同名指令；认不出的角色名会交给其他插件处理。
 
+### 官方机器人（QQBot）
+
+官方机器人不支持合并转发，攻略会改用「单张图 + 作者按钮」发送：
+
+```
+钟离攻略 1/6 · HoYo青枫
+[攻略图]
+[▶ HoYo青枫] [Asgater] [猫冬] [关蝎]
+[地底Tv] [祖安水稻公主]
+```
+
+点按钮切换到对应作者的攻略图，也可以直接发送 `#钟离攻略3` 查看第 3 张。
+需要 [QQBot-Plugin](https://github.com/Tomato-0914/QQBot-Plugin) 等支持 `segment.button` 的适配器；
+`config.yaml` 中 `buttonMode` 可改为 `always`（所有适配器都用按钮）或 `off`（不用按钮）。
+
 ## 攻略从哪里来
 
 1. `resources/data/strategy/<作者>.json` 中记录的图片链接（优先）
@@ -64,7 +79,7 @@ git clone --depth=1 https://github.com/Tomato-0914/Strategy-Plugin.git ./plugins
 - **自制图包**：放在 `data/roleGuides/add_ons/<作者>/<游戏目录>/<角色名>.jpg`
   - 游戏目录：`GenshinImpact`、`StarRail`、`ZenlessZoneZero`（原神也可以直接放在 `<作者>/` 下）
   - 与攻略源同名的作者，以图包为准
-- **其他设置**（合并转发、日志、图片压缩参数）：`config/user/config.yaml` 或锅巴面板
+- **其他设置**（合并转发、按钮模式、日志、图片压缩参数）：`config/user/config.yaml` 或锅巴面板
 
 ## 免责声明
 

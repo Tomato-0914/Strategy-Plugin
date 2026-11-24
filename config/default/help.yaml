@@ -11,6 +11,9 @@ user:
   - name: '#更新钟离攻略'
     des: '重新下载该角色的攻略图'
     icon: update
+  - name: '#钟离攻略3'
+    des: '只看第 3 张（官方机器人按钮切换）'
+    icon: team
   - name: '#雷神卡池 #薙刀复刻'
     des: 'UP 卡池详情与未复刻天数'
     icon: emerald
