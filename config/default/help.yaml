@@ -1,0 +1,38 @@
+user:
+  - name: '#艾尔海森攻略 #更新钟离一图流'
+    des: '角色攻略 (覆盖其他相同触发词的指令)'
+    icon: paimon
+  - name: '#钟离进阶参考'
+    des: '角色参考面板&收益曲线'
+    icon: paimon
+  - name: '#绫人配队 #神鹤万心配队'
+    des: '角色配队一图流 米游社@茗血茶'
+    icon: team
+  - name: '#角色复刻表 #更新武器复刻表'
+    des: '#复刻表 开服至今复刻情况' 
+    icon: banner
+  - name: '#雷神卡池 #薙刀复刻'
+    des: 'UP卡池详情'
+    icon: emerald
+  - name: '#3.3深渊 #3.4深渊阵容'
+    des: '深渊版本参考资料'
+    icon: xiao
+  - name: '#历代12-3 #历代12层'
+    des: '历代深渊12层最低输出量'
+    icon: dinosaur
+  - name: '#虚空深渊使用率'
+    des: '支持筛选四星/五星 #虚空深渊五星使用率'
+    icon: akasha
+  - name: '#虚空深渊队伍'
+    des: '支持筛选上下半 出战数/满星率排序'
+    icon: akasha
+master:
+  - name: '表情辅助'
+    des: '非命令，限制全局表情功能'
+    icon: monkas
+  - name: '#更新摩拉资源'
+    des: '更新至最新摩拉资源包'
+    icon: team
+  - name: '#摩拉更新'
+    des: '更新摩拉插件'
+    icon: update
